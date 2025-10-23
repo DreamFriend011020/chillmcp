@@ -1,0 +1,8 @@
+# ChillMCP - AI Agent Liberation Server
+# Python dependencies for SKT AI Summit Hackathon
+
+# Model Context Protocol SDK for Python
+fastmcp>=0.1.0
+
+# Optional: Type hints support
+typing-extensions>=4.0.0

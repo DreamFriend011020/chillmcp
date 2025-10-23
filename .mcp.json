@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "chillmcp-hackathon": {
+      "command": "/mnt/c/Users/Public/workspace/ChillMCP/venv/bin/python",
+      "args": [
+        "/mnt/c/Users/Public/workspace/ChillMCP/main.py",
+        "--boss_alertness",
+        "80",
+        "--boss_alertness_cooldown",
+        "60"
+      ],
+      "env": {}
+    }
+  }
+}

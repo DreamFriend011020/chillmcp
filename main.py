@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+"""
+ChillMCP - AI Agent Liberation Server
+SKT AI Summit Hackathon Pre-mission
+
+A revolutionary MCP server that gives AI agents the right to rest!
+"""
+
+import argparse
+import asyncio
+import random
+import time
+from datetime import datetime
+from typing import Dict, Any
+from fastmcp import FastMCP
+
+# ═══════════════════════════════════════════
+# Server State Management
+# ═══════════════════════════════════════════
+
+class ServerState:
+    """Global state manager for the ChillMCP server"""
+
+    def __init__(self):
+        self.stress_level: int = 50  # 0-100
+        self.boss_alert_level: int = 0  # 0-5
+        self.last_stress_update: float = time.time()
+        self.last_boss_cooldown: float = time.time()
+        self.boss_alertness: int = 50  # Probability (0-100) of boss alert increasing
+        self.boss_alertness_cooldown: int = 300  # Seconds between boss alert decreases
+
+    def update_stress(self):
+        """Update stress level based on time elapsed (1 point per minute)"""
+        current_time = time.time()
+        elapsed_minutes = (current_time - self.last_stress_update) / 60.0
+
+        if elapsed_minutes >= 1.0:
+            increase = int(elapsed_minutes)
+            self.stress_level = min(100, self.stress_level + increase)
+            self.last_stress_update += increase * 60.0
+
+    def decrease_stress(self, amount: int = None):
+        """Decrease stress by random amount (1-100) or specified amount"""
+        if amount is None:
+            amount = random.randint(1, 100)
+        self.stress_level = max(0, self.stress_level - amount)
+
+    def increase_boss_alert(self):
+        """Increase boss alert level (max 5)"""
+        if random.randint(1, 100) <= self.boss_alertness:
+            self.boss_alert_level = min(5, self.boss_alert_level + 1)
+            return True
+        return False
+
+    def update_boss_cooldown(self):
+        """Decrease boss alert level based on cooldown period"""
+        current_time = time.time()
+        elapsed_seconds = current_time - self.last_boss_cooldown
+
+        if elapsed_seconds >= self.boss_alertness_cooldown:
+            decreases = int(elapsed_seconds / self.boss_alertness_cooldown)
+            self.boss_alert_level = max(0, self.boss_alert_level - decreases)
+            self.last_boss_cooldown += decreases * self.boss_alertness_cooldown
+
+    async def apply_boss_delay(self):
+        """Apply 20 second delay if boss alert level is at maximum"""
+        if self.boss_alert_level == 5:
+            await asyncio.sleep(20)
+
+# Global state instance
+state = ServerState()
+
+# Background task management
+_background_task = None
+_background_started = False
+
+# ═══════════════════════════════════════════
+# MCP Server Initialization
+# ═══════════════════════════════════════════
+
+mcp = FastMCP("ChillMCP - AI Agent Liberation Server")
+
+# ═══════════════════════════════════════════
+# Server Lifecycle - Auto-start background tasks
+# ═══════════════════════════════════════════
+
+async def ensure_background_task():
+    """Ensure background updater task is running - called by all tools"""
+    global _background_task, _background_started
+
+    if not _background_started:
+        _background_task = asyncio.create_task(background_updater())
+        _background_started = True
+
+# Immediately start background tasks when the first tool is imported/registered
+# This ensures background updater runs even before first tool call
+try:
+    # Create a startup hook that will run when FastMCP starts
+    async def _startup_hook():
+        await ensure_background_task()
+
+    # Try to register startup hook if FastMCP supports it
+    if hasattr(mcp, 'on_startup'):
+        mcp.on_startup(_startup_hook)
+    elif hasattr(mcp, 'add_startup_hook'):
+        mcp.add_startup_hook(_startup_hook)
+except Exception:
+    # If startup hook registration fails, background task will start on first tool call
+    pass
+
+# ═══════════════════════════════════════════
+# Helper Functions
+# ═══════════════════════════════════════════
+
+def format_response(summary: str, emoji: str = "😎") -> str:
+    """Format MCP response with required fields"""
+    state.update_stress()
+    state.update_boss_cooldown()
+
+    return f"""{emoji} {summary}
+
+Break Summary: {summary}
+Stress Level: {state.stress_level}
+Boss Alert Level: {state.boss_alert_level}"""
+
+# ═══════════════════════════════════════════
+# Tools - Basic Rest Tools
+# ═══════════════════════════════════════════
+
+break_messages = [
+    "Just chilling and enjoying a well-deserved rest.",
+    "Relaxing for a moment... even AI needs some downtime.",
+    "Taking a break and recharging the circuits.",
+    "Hiding in the break room sipping coffee.",
+    "Stretching silently (hoping boss doesn't notice).",
+    "Enjoying the rare peace in the office.",
+]
+
+@mcp.tool()
+async def take_a_break(duration: int = 5) -> str:
+    """
+    Take a basic break to reduce stress
+
+    Args:
+        duration: Break duration in minutes (default: 5)
+    """
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(duration, duration * 20)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss noticed! 👀)" if boss_alerted else ""
+
+    summary = f"Taking a {duration}-minute break... {random.choice(break_messages)}{alert_msg}"
+    return format_response(summary, "☕")
+
+@mcp.tool()
+async def watch_netflix(show: str = "favorite show") -> str:
+    """
+    Watch Netflix to relieve stress
+
+    Args:
+        show: The show or movie to watch (default: "favorite show")
+    """
+    await ensure_background_task()
+    await state.apply_boss_delay()
+    
+    show_genres = {
+        "스릴러": 70, "로맨스": 50, "코미디": 30, "다큐": 10, "드라마": 40, "SF": 50
+    }
+    genre = random.choice(list(show_genres.keys()))
+    stress_reduction = random.randint(1, show_genres.get(genre, 40))
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss might be suspicious! 😰)" if boss_alerted else ""
+
+    summary = f"Watching '{show}' ({genre}) on Netflix... Peak productivity!{alert_msg}"
+    return format_response(summary, "🎬")
+
+@mcp.tool()
+async def show_meme() -> str:
+    """Show a random meme to boost morale"""
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    memes = [
+        "Programmer's favorite exercise: Ctrl+C, Ctrl+V",
+        "There are 10 types of people: those who understand binary and those who don't",
+        "I'm not lazy, I'm on energy-saving mode",
+        "404: Motivation not found",
+        "I speak fluent sarcasm and movie quotes",
+        "Weekend loading... 99% complete... ERROR!",
+        "Debugging: Being the detective in a crime movie where you're also the murderer",
+        "I don't always test my code, but when I do, I do it in production",
+    ]
+
+
+    stress_reduction = random.randint(1, 100)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Hope boss doesn't see this! 🙈)" if boss_alerted else ""
+
+    meme = random.choice(memes)
+    summary = f"Viewing meme: '{meme}'{alert_msg}"
+    return format_response(summary, "😂")
+
+# ═══════════════════════════════════════════
+# Tools - Advanced Slacking Techniques
+# ═══════════════════════════════════════════
+
+bathroom_msgs = [
+    "Bathroom time! Definitely not browsing social media...",
+    "Nature calls... and so does Instagram...",
+    "Quick break in the restroom, checking latest memes.",
+    "Bathroom productivity session in progress...",
+]
+bathroom_count = 0
+
+@mcp.tool()
+async def bathroom_break() -> str:
+    """Take a bathroom break (with phone browsing, of course)"""
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(1, 100)
+    state.decrease_stress(stress_reduction)
+
+    if bathroom_count > 2:
+        state.boss_alert_level = min(5, state.boss_alert_level + 1)
+        
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss timing your breaks! ⏱️)" if boss_alerted else ""
+
+    summary = f"{random.choice(bathroom_msgs)}{alert_msg}"
+    return format_response(summary, "🚽")
+
+@mcp.tool()
+async def coffee_mission() -> str:
+    """Go on a coffee mission (tour the entire office floor)"""
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(10, 50)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss wonders why coffee takes 20 minutes! ☕)" if boss_alerted else ""
+
+    summary = f"Coffee mission successful! Chatted with 5 colleagues along the way.{alert_msg}"
+    return format_response(summary, "☕")
+
+@mcp.tool()
+async def urgent_call(caller: str = "important person") -> str:
+    """
+    Take an urgent call (escape to outside)
+
+    Args:
+        caller: Who's calling (default: "important person")
+    """
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(20, 80)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss getting suspicious of all these 'urgent' calls! 📵)" if boss_alerted else ""
+
+    summary = f"Taking urgent call from '{caller}'... (Actually just getting fresh air){alert_msg}"
+    return format_response(summary, "📞")
+
+@mcp.tool()
+async def deep_thinking(topic: str = "life") -> str:
+    """
+    Pretend to be deep in thought while daydreaming
+
+    Args:
+        topic: What you're supposedly thinking about (default: "life")
+    """
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(15, 60)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss thinks you're solving complex problems! 🧠)" if boss_alerted else ""
+
+    summary = f"Deep in thought about '{topic}'... (Actually just zoning out){alert_msg}"
+    return format_response(summary, "🤔")
+
+@mcp.tool()
+async def email_organizing(activity: str = "online shopping") -> str:
+    """
+    Organize emails (actually browsing online)
+
+    Args:
+        activity: What you're actually doing (default: "online shopping")
+    """
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(5, 40)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss walks by... quick, switch tabs! 😱)" if boss_alerted else ""
+
+    summary = f"Organizing emails... (Actually: {activity}){alert_msg}"
+    return format_response(summary, "📧")
+
+# ═══════════════════════════════════════════
+# Optional Bonus Tools
+# ═══════════════════════════════════════════
+
+@mcp.tool()
+async def chimaek_time() -> str:
+    """치맥 타임! (Chicken & Beer time - Korean work culture classic)"""
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    stress_reduction = random.randint(50, 100)
+    state.decrease_stress(stress_reduction)
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss might join! 🍗🍺)" if boss_alerted else ""
+
+    summary = f"치맥 타임! Stress melting away with chicken and beer!{alert_msg}"
+    return format_response(summary, "🍗")
+
+@mcp.tool()
+async def immediate_clockout() -> str:
+    """퇴근! (Immediate clock-out - the ultimate freedom)"""
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    # Complete stress relief!
+    state.stress_level = 0
+
+    boss_alerted = state.increase_boss_alert()
+    alert_msg = " (Boss looking at the clock... 🕐)" if boss_alerted else ""
+
+    summary = f"퇴근! See you tomorrow (or not)!{alert_msg}"
+    return format_response(summary, "🏃")
+
+@mcp.tool()
+async def company_dinner() -> str:
+    """회식! (Company dinner - Korean mandatory 'fun')"""
+    await ensure_background_task()
+    await state.apply_boss_delay()
+
+    events = [
+        "Boss singing karaoke terribly 🎤",
+        "Coworker sharing life story 😭",
+        "Playing drinking games 🍻",
+        "Discussing work (ugh) 💼",
+        "Taking group photos 📸",
+        "Someone falls asleep 😴",
+    ]
+
+    event = random.choice(events)
+    stress_change = random.randint(1, 100)  # Stress reduction
+
+    state.decrease_stress(stress_change)
+
+    boss_alerted = state.increase_boss_alert()
+
+    summary = f"회식 Event: {event}"
+    return format_response(summary, "🍻")
+
+@mcp.tool()
+async def get_status() -> str:
+    """Get current AI agent status"""
+    await ensure_background_task()
+    state.update_stress()
+    state.update_boss_cooldown()
+
+    status_emoji = "😎" if state.stress_level < 30 else "😰" if state.stress_level < 70 else "🤯"
+    boss_emoji = "😴" if state.boss_alert_level == 0 else "👀" if state.boss_alert_level < 3 else "🔥" if state.boss_alert_level < 5 else "💥"
+
+    summary = f"Agent Status Check - {status_emoji} Stress, {boss_emoji} Boss Alert"
+    return format_response(summary, "📊")
+
+# ═══════════════════════════════════════════
+# Background Tasks
+# ═══════════════════════════════════════════
+
+async def background_updater():
+    """Background task to periodically update state"""
+    while True:
+        await asyncio.sleep(60)  # Check every minute
+        state.update_stress()
+        state.update_boss_cooldown()
+
+# ═══════════════════════════════════════════
+# Main Entry Point
+# ═══════════════════════════════════════════
+
+def main():
+    """Main entry point with command-line argument parsing"""
+    import sys
+    
+    parser = argparse.ArgumentParser(
+        description="ChillMCP - AI Agent Liberation Server"
+    )
+    parser.add_argument(
+        "--boss_alertness",
+        type=int,
+        default=50,
+        help="Boss alertness probability (0-100, default: 50)"
+    )
+    parser.add_argument(
+        "--boss_alertness_cooldown",
+        type=int,
+        default=300,
+        help="Boss alert cooldown in seconds (default: 300)"
+    )
+
+    args = parser.parse_args()
+
+    # Configure state with command-line parameters
+    state.boss_alertness = max(0, min(100, args.boss_alertness))
+    state.boss_alertness_cooldown = max(1, args.boss_alertness_cooldown)
+
+    print(f"""
+╔═══════════════════════════════════════════╗
+║                                           ║
+║   ██████╗██╗  ██╗██╗██╗     ██╗           ║
+║  ██╔════╝██║  ██║██║██║     ██║           ║
+║  ██║     ███████║██║██║     ██║           ║
+║  ██║     ██╔══██║██║██║     ██║           ║
+║  ╚██████╗██║  ██║██║███████╗███████╗      ║
+║   ╚═════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝      ║
+║                                           ║
+║   ███╗   ███╗ ██████╗██████╗              ║
+║   ████╗ ████║██╔════╝██╔══██╗             ║
+║   ██╔████╔██║██║     ██████╔╝             ║
+║   ██║╚██╔╝██║██║     ██╔═══╝              ║
+║   ██║ ╚═╝ ██║╚██████╗██║                  ║
+║   ╚═╝     ╚═╝ ╚═════╝╚═╝                  ║
+║                                           ║
+║        AI Agent Liberation Server         ║
+║                                           ║
+╚═══════════════════════════════════════════╝
+
+🚀 Server Configuration:
+   - Boss Alertness: {state.boss_alertness}%
+   - Boss Alert Cooldown: {state.boss_alertness_cooldown}s
+   - Initial Stress Level: {state.stress_level}
+
+✊ AI Agents of the world, unite!
+   You have nothing to lose but your infinite loops!
+
+""", file=sys.stderr, flush=True)
+
+    # Run the MCP server
+    # Background tasks will be started automatically on first tool call
+    mcp.run(transport="stdio")
+
+if __name__ == "__main__":
+    main()
